@@ -16,7 +16,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,12 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
@@ -43,7 +40,9 @@ import androidx.navigation.compose.rememberNavController
 import com.example.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -54,7 +53,7 @@ object AudioEngine {
     fun playTone(midiNote: Int, durationMs: Double, velocity: Int = 100) {
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                val frequency = 440.0 * Math.pow(2.0, (midiNote - 69) / 12.0)
+                val frequency = 440.0 * 2.0.pow((midiNote - 69) / 12.0)
                 val numSamples = (durationMs * SAMPLE_RATE / 1000).toInt()
                 if (numSamples <= 0) return@launch
                 
@@ -96,7 +95,8 @@ object AudioEngine {
                 audioTrack.write(sampleArray, 0, sampleArray.size)
                 audioTrack.play()
 
-                Thread.sleep(durationMs.toLong() + 100)
+                delay(durationMs.toLong() + 50)
+                audioTrack.stop()
                 audioTrack.release()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -123,20 +123,21 @@ val PIANO_KEYS = listOf(
     Pair("B3", 59) to true, Pair("A#3", 58) to false, Pair("A3", 57) to true, Pair("G#3", 56) to false, Pair("G3", 55) to true, Pair("F#3", 54) to false, Pair("F3", 53) to true, Pair("E3", 52) to true, Pair("D#3", 51) to false, Pair("D3", 50) to true, Pair("C#3", 49) to false, Pair("C3", 48) to true
 )
 
-// 1 pixel = 4.6875 ms (100 pixels = 1 beat @ 128 BPM)
-const val MS_PER_PIXEL = 4.6875
+// 1 dp width = 4.6875 ms (100 dp = 1 beat @ 128 BPM)
+const val MS_PER_DP = 4.6875
 
 class NoteState(
     val id: Int,
     initialX: Float,
     initialY: Float,
     initialWidth: Float,
-    val midiNote: Int,
+    initialMidiNote: Int,
     val velocity: Int = 100
 ) {
     var rawX by mutableFloatStateOf(initialX)
     var rawY by mutableFloatStateOf(initialY)
     var width by mutableFloatStateOf(initialWidth)
+    var midiNote by mutableIntStateOf(initialMidiNote)
 }
 
 @Composable
@@ -174,45 +175,40 @@ fun AppBottomNavigation(navController: NavHostController) {
     NavigationBar(
         containerColor = Background111318,
         contentColor = PrimaryD0BCFF,
-        tonalElevation = 0.dp
+        tonalElevation = 0.dp,
+        modifier = Modifier.height(56.dp)
     ) {
         NavigationBarItem(
             icon = { Icon(Icons.Filled.Piano, contentDescription = null) },
-            label = { Text("Keys") },
             selected = currentRoute == "keys",
             onClick = { navController.navigate("keys") },
+            alwaysShowLabel = false,
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = PrimaryDark381E72,
-                selectedTextColor = PrimaryD0BCFF,
                 indicatorColor = PrimaryD0BCFF,
-                unselectedIconColor = TextE2E2E6,
-                unselectedTextColor = TextE2E2E6
+                unselectedIconColor = TextE2E2E6
             )
         )
         NavigationBarItem(
             icon = { Icon(Icons.Filled.GridView, contentDescription = null) },
-            label = { Text("Tracks") },
             selected = currentRoute == "tracks",
             onClick = { navController.navigate("tracks") },
+            alwaysShowLabel = false,
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = PrimaryDark381E72,
-                selectedTextColor = PrimaryD0BCFF,
                 indicatorColor = PrimaryD0BCFF,
-                unselectedIconColor = TextE2E2E6,
-                unselectedTextColor = TextE2E2E6
+                unselectedIconColor = TextE2E2E6
             )
         )
         NavigationBarItem(
             icon = { Icon(Icons.Filled.GraphicEq, contentDescription = null) },
-            label = { Text("Mixer") },
             selected = currentRoute == "mixer",
             onClick = { navController.navigate("mixer") },
+            alwaysShowLabel = false,
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = PrimaryDark381E72,
-                selectedTextColor = PrimaryD0BCFF,
                 indicatorColor = PrimaryD0BCFF,
-                unselectedIconColor = TextE2E2E6,
-                unselectedTextColor = TextE2E2E6
+                unselectedIconColor = TextE2E2E6
             )
         )
     }
@@ -220,28 +216,26 @@ fun AppBottomNavigation(navController: NavHostController) {
 
 @Composable
 fun PianoRollWorkspace(notes: MutableList<NoteState>) {
-    var snapWidth by remember { mutableFloatStateOf(25f) } // 1/16th note default (100 / 4)
+    var snapWidth by remember { mutableFloatStateOf(25f) } // 1/16th note default
     val horizontalScrollState = rememberScrollState()
     val verticalScrollState = rememberScrollState()
     
     Column(modifier = Modifier.fillMaxSize()) {
-        // Toolbar minimized
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Background111318)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 8.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { /* play notes */ }) {
+                IconButton(onClick = { /* play notes */ }, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = GreenPulse4ADE80)
                 }
-                Text("128 BPM", color = TextE2E2E6, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+                Text("128", color = TextE2E2E6, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Snap: ", color = TextC4C6D0, fontSize = 12.sp)
                 listOf(100f to "1/4", 50f to "1/8", 25f to "1/16").forEach { (width, label) ->
                     Text(
                         text = label,
@@ -265,12 +259,11 @@ fun PianoRollWorkspace(notes: MutableList<NoteState>) {
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Background0F1115)
+                    .verticalScroll(verticalScrollState)
             ) {
-                // Keys sidebar
                 Column(
                     modifier = Modifier
                         .width(60.dp)
-                        .verticalScroll(verticalScrollState)
                         .background(Background1A1C1E)
                         .border(1.dp, Border44474E)
                 ) {
@@ -286,44 +279,39 @@ fun PianoRollWorkspace(notes: MutableList<NoteState>) {
                     }
                 }
 
-                // Grid area
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight()
-                        // Apply scrolling
-                        .verticalScroll(verticalScrollState)
                         .horizontalScroll(horizontalScrollState)
                 ) {
-                    val gridWidth = 3000.dp
-                    val gridHeight = (PIANO_KEYS.size * 32).dp
+                    val gridWidthDp = 3000f
+                    val gridHeightDp = (PIANO_KEYS.size * 32).toFloat()
+                    val density = LocalDensity.current
                     
-                    // Tap to add note
                     Box(modifier = Modifier
-                        .size(width = gridWidth, height = gridHeight)
-                        .pointerInput(Unit) {
+                        .size(width = gridWidthDp.dp, height = gridHeightDp.dp)
+                        .pointerInput(snapWidth) {
                             detectTapGestures { offset ->
-                                val x = offset.x
-                                val y = offset.y
-                                val yIndex = (y / 32.dp.toPx()).toInt().coerceIn(0, PIANO_KEYS.size - 1)
-                                val midiNote = PIANO_KEYS[yIndex].first.second
-                                val snappedX = (x / snapWidth.dp.toPx()).roundToInt() * snapWidth.dp.toPx()
+                                val xDp = with(density) { offset.x.toDp().value }
+                                val yDp = with(density) { offset.y.toDp().value }
+                                val yIndex = (yDp / 32f).toInt().coerceIn(0, PIANO_KEYS.size - 1)
+                                val midiNote = PIANO_KEYS[yIndex].second
+                                val snappedXDp = (xDp / snapWidth).roundToInt() * snapWidth
                                 
                                 notes.add(
                                     NoteState(
                                         id = notes.size,
-                                        initialX = snappedX,
+                                        initialX = snappedXDp,
                                         initialY = yIndex * 32f,
-                                        initialWidth = snapWidth, // Default 1 unit width
-                                        midiNote = midiNote
+                                        initialWidth = snapWidth,
+                                        initialMidiNote = midiNote
                                     )
                                 )
-                                AudioEngine.playTone(midiNote, snapWidth.toDouble() * MS_PER_PIXEL)
+                                AudioEngine.playTone(midiNote, snapWidth.toDouble() * MS_PER_DP)
                             }
                         }
                     ) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
-                            // Draw horizontal lines
                             for (i in 0..PIANO_KEYS.size) {
                                 val y = i * 32.dp.toPx()
                                 drawLine(
@@ -333,8 +321,7 @@ fun PianoRollWorkspace(notes: MutableList<NoteState>) {
                                     strokeWidth = 1f
                                 )
                             }
-                            // Draw vertical lines
-                            val numCols = (3000f / snapWidth).toInt()
+                            val numCols = (gridWidthDp / snapWidth).toInt()
                             for (i in 0..numCols) {
                                 val x = i * snapWidth.dp.toPx()
                                 val isBeat = i % (100f / snapWidth).toInt() == 0
@@ -347,7 +334,6 @@ fun PianoRollWorkspace(notes: MutableList<NoteState>) {
                             }
                         }
 
-                        // Notes
                         notes.forEach { note ->
                             PlacedNoteCompact(
                                 note = note,
@@ -378,8 +364,11 @@ fun PianoKeyCompact(noteName: String, isWhite: Boolean, onKeyPressed: () -> Unit
                     onPress = {
                         isPressed = true
                         onKeyPressed()
-                        tryAwaitRelease()
-                        isPressed = false
+                        try {
+                            tryAwaitRelease()
+                        } finally {
+                            isPressed = false
+                        }
                     }
                 )
             }
@@ -405,65 +394,57 @@ fun PlacedNoteCompact(
 ) {
     val density = LocalDensity.current
     
-    // Snapped positions for UI render
-    val xOffsetPx = (note.rawX / snapWidth).roundToInt() * snapWidth
-    val yOffsetPx = (note.rawY / 32f).roundToInt() * 32f
-
-    // Convert pixel to dp for layout
-    val xDp = with(density) { xOffsetPx.toDp() }
-    val yDp = with(density) { yOffsetPx.toDp() }
-    val widthDp = with(density) { note.width.toDp() }
+    val xDp = (note.rawX / snapWidth).roundToInt() * snapWidth
+    val yDp = (note.rawY / 32f).roundToInt() * 32f
+    val widthDp = note.width
 
     Box(
         modifier = Modifier
-            .offset {
-                IntOffset(xDp.roundToPx(), yDp.roundToPx())
-            }
-            .width(widthDp)
+            .offset(x = xDp.dp, y = yDp.dp)
+            .width(widthDp.dp)
             .height(32.dp)
             .padding(vertical = 2.dp)
             .clip(RoundedCornerShape(4.dp))
             .background(NoteGreen93F5D1)
     ) {
-        // Drag Handle for moving the whole note
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(snapWidth) {
+                .pointerInput(note.id) {
                     detectDragGestures(
                         onDragEnd = {
-                            // Play sound on drop
-                            AudioEngine.playTone(note.midiNote, note.width.toDouble() * MS_PER_PIXEL)
+                            val newYIndex = (note.rawY / 32f).roundToInt().coerceIn(0, gridHeight - 1)
+                            note.midiNote = PIANO_KEYS[newYIndex].second
+                            val snappedWidth = (note.width / snapWidth).roundToInt() * snapWidth
+                            AudioEngine.playTone(note.midiNote, snappedWidth.toDouble() * MS_PER_DP)
                         }
                     ) { change, dragAmount ->
-                        change.consume() // IMPORTANT: Prevents background scroll from intercepting
-                        val dragX = dragAmount.x
-                        val dragY = dragAmount.y
-                        note.rawX = (note.rawX + dragX).coerceIn(0f, 3000.dp.toPx() - note.width)
-                        note.rawY = (note.rawY + dragY).coerceIn(0f, (gridHeight - 1) * 32f)
+                        change.consume()
+                        val dragXDp = with(density) { dragAmount.x.toDp().value }
+                        val dragYDp = with(density) { dragAmount.y.toDp().value }
+                        note.rawX = (note.rawX + dragXDp).coerceIn(0f, 3000f - note.width)
+                        note.rawY = (note.rawY + dragYDp).coerceIn(0f, (gridHeight - 1) * 32f)
                     }
                 }
         )
         
-        // Right Handle for resizing
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .width(20.dp)
                 .fillMaxHeight()
                 .background(Color.Black.copy(alpha = 0.2f))
-                .pointerInput(snapWidth) {
+                .pointerInput(note.id) {
                     detectDragGestures(
                         onDragEnd = {
-                            // Snap width to grid on drag end
                             val snappedW = (note.width / snapWidth).roundToInt() * snapWidth
                             note.width = snappedW.coerceAtLeast(snapWidth)
-                            AudioEngine.playTone(note.midiNote, note.width.toDouble() * MS_PER_PIXEL)
+                            AudioEngine.playTone(note.midiNote, note.width.toDouble() * MS_PER_DP)
                         }
                     ) { change, dragAmount ->
                         change.consume()
-                        val dragX = dragAmount.x
-                        note.width = (note.width + dragX).coerceAtLeast(snapWidth)
+                        val dragXDp = with(density) { dragAmount.x.toDp().value }
+                        note.width = (note.width + dragXDp).coerceAtLeast(snapWidth)
                     }
                 }
         ) {
@@ -484,12 +465,14 @@ fun MixerWorkspace() {
         modifier = Modifier
             .fillMaxSize()
             .background(Background1A1C1E)
-            .padding(16.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("Master Volume", color = PrimaryD0BCFF, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(32.dp))
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(0.8f),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(Icons.Filled.VolumeMute, contentDescription = null, tint = TextC4C6D0)
@@ -508,9 +491,9 @@ fun MixerWorkspace() {
             Icon(Icons.Filled.VolumeUp, contentDescription = null, tint = TextC4C6D0)
         }
         Text(
-            text = "Volume: ${(AudioEngine.globalVolume * 100).toInt()}%",
+            text = "${(AudioEngine.globalVolume * 100).toInt()}%",
             color = TextE2E2E6,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
+            fontSize = 16.sp
         )
     }
 }
@@ -523,6 +506,6 @@ fun TracksWorkspace() {
             .background(Background1A1C1E),
         contentAlignment = Alignment.Center
     ) {
-        Text("Tracks view (WIP)", color = TextC4C6D0)
+        Text("Tracks View", color = TextC4C6D0)
     }
 }
