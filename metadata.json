@@ -1,0 +1,6 @@
+{
+  "name": "HyperDAW",
+  "description": "Professional DAW for mobile with intuitive piano roll and low latency.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
