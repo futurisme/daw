@@ -295,7 +295,7 @@ fun PianoRollWorkspace(notes: MutableList<NoteState>) {
                                 val xDp = with(density) { offset.x.toDp().value }
                                 val yDp = with(density) { offset.y.toDp().value }
                                 val yIndex = (yDp / 32f).toInt().coerceIn(0, PIANO_KEYS.size - 1)
-                                val midiNote = PIANO_KEYS[yIndex].second
+                                val midiNote = PIANO_KEYS[yIndex].first.second
                                 val snappedXDp = (xDp / snapWidth).roundToInt() * snapWidth
                                 
                                 notes.add(
@@ -414,7 +414,7 @@ fun PlacedNoteCompact(
                     detectDragGestures(
                         onDragEnd = {
                             val newYIndex = (note.rawY / 32f).roundToInt().coerceIn(0, gridHeight - 1)
-                            note.midiNote = PIANO_KEYS[newYIndex].second
+                            note.midiNote = PIANO_KEYS[newYIndex].first.second
                             val snappedWidth = (note.width / snapWidth).roundToInt() * snapWidth
                             AudioEngine.playTone(note.midiNote, snappedWidth.toDouble() * MS_PER_DP)
                         }
